@@ -1,0 +1,16 @@
+body {
+  background-color: grey;
+  color: blue;
+}
+
+.nav-list {
+  display: flex;
+  gap: 2em;
+  list-style: none;
+  padding: 0;
+}
+
+.nav-list-item {
+  color: aqua;
+  text-decoration: none;
+}

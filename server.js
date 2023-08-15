@@ -1,67 +1,56 @@
-const http = require('http');
+const express = require('express');
 const path = require('path');
-const fs = require('fs');
-const fsPromises = require('fs').promises;
+const cors = require('cors');
+const { logger } = require('./middleware/log-events');
+const errorHandler = require('./middleware/error-handler');
 
-const { getContentType, getFilePath } = require('./utils');
-const logEvents = require('./log-events');
-const EventEmitter = require('events');
-
-class Emitter extends EventEmitter {}
-
-const myEmitter = new Emitter();
-myEmitter.on('log', (msg, fileName) => logEvents(msg, fileName));
 const PORT = process.env.PORT || 3000;
 
-const serveFile = async (filePath, contentType, response) => {
-  try {
-    const rowData = await fsPromises.readFile(
-      filePath,
-      !contentType.includes('image') ? 'utf8' : ''
-    );
-    const isJson = contentType === 'application/json';
-    const data = isJson ? JSON.parse(rowData) : rowData;
+const app = express();
 
-    response.writeHead(filePath.includes('404.html') ? 404 : 200, {
-      'Content-Type': contentType,
-    });
+// Custom middleware
+app.use(logger);
 
-    response.end(isJson ? JSON.stringify(data) : data);
-  } catch (error) {
-    myEmitter.emit('log', `${error.name}:${error.message}`, 'err-log.txt');
-    response.statusCode = 500;
-    response.end();
-  }
+const whiteList = ['http://localhost:3000', 'https://www.google.com.ua'];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (whiteList.includes(origin) || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  optionsSuccessStatus: 200,
 };
 
-const server = http.createServer((req, res) => {
-  console.log(req.url, req.method);
-  myEmitter.emit('log', `${req.url}\t${req.method}`, 'req-log.txt');
+app.use(cors(corsOptions));
 
-  const extension = path.extname(req.url);
-  let contentType = getContentType(extension);
-  const filePath = getFilePath(contentType, req.url, extension);
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 
-  const fileExists = fs.existsSync(filePath);
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/subdir', express.static(path.join(__dirname, 'public')));
 
-  if (fileExists) {
-    serveFile(filePath, contentType, res);
+app.use('/another-page', require('./routes/subdir'));
+app.use('/', require('./routes/root'));
+
+app.use('/employees', require('./routes/api/employees'));
+
+app.all('*', (req, res) => {
+  res.status(404);
+  console.log(req);
+  if (req.accepts('html')) {
+    res.sendFile(path.join(__dirname, 'views', '404.html'));
+  } else if (req.accepts('json')) {
+    res.json({ error: '404 Not Found' });
   } else {
-    switch (path.parse(filePath).base) {
-      case 'old-page.html':
-        res.writeHead(301, { Location: 'new-page.html' });
-        res.end();
-        break;
-      case 'www-page.html':
-        res.writeHead(301, { Location: '/' });
-        res.end();
-        break;
-      default:
-        serveFile(path.join(__dirname, 'views', '404.html'), 'text/html', res);
-    }
+    res.type('txt').send('404 Not Found');
   }
 });
 
-server.listen(PORT, () => {
+app.use(errorHandler);
+
+app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
