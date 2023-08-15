@@ -1,9 +1,15 @@
 const path = require('path');
+const fs = require('fs');
 
 const data = {
   'employees': require('./../model/employees.json'),
   setEmployees: function (data) {
     this.employees = data;
+    const jsonData = JSON.stringify(data);
+    fs.writeFileSync(
+      path.join(__dirname, '..', 'model', 'employees.json'),
+      jsonData
+    );
   },
 };
 
